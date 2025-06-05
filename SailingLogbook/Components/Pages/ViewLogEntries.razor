@@ -1,0 +1,68 @@
+@page "/viewlogs"
+@using SailingLogbook.Models
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+
+<h3>View Log Entries</h3>
+
+@if (logEntries == null || !logEntries.Any())
+{
+    <p>No log entries found.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Weather</th>
+                    <th>Wind</th>
+                    <th>Position</th>
+                    <th>Skipper</th>
+                    <th>Crew</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in logEntries)
+                {
+                    <tr>
+                        <td>@entry.Date.ToShortDateString()</td>
+                        <td>@entry.Time.ToShortTimeString()</td>
+                        <td>@entry.Weather</td>
+                        <td>@entry.Wind</td>
+                        <td>@entry.Position</td>
+                        <td>@entry.Skipper</td>
+                        <td>@entry.Crew</td>
+                        <td style="white-space: pre-wrap; word-break: break-word;">@entry.Notes</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<LogEntry> logEntries = new List<LogEntry>();
+    private const string localStorageKey = "logEntries";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            string existingEntriesJson = await JSRuntime.InvokeAsync<string>("getFromLocalStorage", localStorageKey);
+
+            if (!string.IsNullOrEmpty(existingEntriesJson))
+            {
+                logEntries = JsonSerializer.Deserialize<List<LogEntry>>(existingEntriesJson) ?? new List<LogEntry>();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading from local storage: {ex.Message}");
+            // Optionally, display an error message to the user
+        }
+    }
+}

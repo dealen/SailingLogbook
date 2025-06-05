@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SailingLogbook</title>
+    <base href="/" />
+    <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="SailingLogbook.styles.css" rel="stylesheet" />
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script>
+        function saveToLocalStorage(key, value) {
+            localStorage.setItem(key, value);
+        }
+        function getFromLocalStorage(key) {
+            return localStorage.getItem(key);
+        }
+
+        let recognition;
+
+        function startSpeechRecognition(dotnetHelper) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                console.error("SpeechRecognition API not supported in this browser.");
+                dotnetHelper.invokeMethodAsync('NotifySpeechRecognitionError', 'Speech recognition not supported in this browser.');
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                dotnetHelper.invokeMethodAsync('UpdateRecordingState', true);
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                dotnetHelper.invokeMethodAsync('UpdateNotesField', transcript);
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                let errorMessage = 'Speech recognition error: ' + event.error;
+                if (event.error === 'no-speech') {
+                    errorMessage = 'No speech was detected. Please try again.';
+                } else if (event.error === 'audio-capture') {
+                    errorMessage = 'Audio capture failed. Ensure microphone is enabled and permitted.';
+                } else if (event.error === 'not-allowed') {
+                    errorMessage = 'Microphone access denied. Please allow microphone access.';
+                }
+                dotnetHelper.invokeMethodAsync('NotifySpeechRecognitionError', errorMessage);
+                dotnetHelper.invokeMethodAsync('UpdateRecordingState', false);
+            };
+
+            recognition.onnomatch = () => {
+                console.warn('Speech not recognized.');
+                dotnetHelper.invokeMethodAsync('NotifySpeechRecognitionError', 'Could not recognize speech. Please try again.');
+                dotnetHelper.invokeMethodAsync('UpdateRecordingState', false);
+            };
+
+            recognition.onspeechend = () => {
+                recognition.stop();
+                // dotnetHelper.invokeMethodAsync('UpdateRecordingState', false); // Handled by onend
+            };
+
+            recognition.onend = () => {
+                dotnetHelper.invokeMethodAsync('UpdateRecordingState', false);
+            };
+
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error("Error starting recognition: ", e);
+                dotnetHelper.invokeMethodAsync('NotifySpeechRecognitionError', 'Failed to start voice recognition.');
+                dotnetHelper.invokeMethodAsync('UpdateRecordingState', false);
+            }
+        }
+
+        function stopSpeechRecognition() {
+            if (recognition) {
+                recognition.stop();
+            }
+        }
+    </script>
+</body>
+
+</html>

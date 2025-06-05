@@ -1,0 +1,162 @@
+@page "/addlog"
+@using SailingLogbook.Models
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<h3>Add New Log Entry</h3>
+
+<EditForm Model="@logEntry" OnValidSubmit="@HandleValidSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label for="date" class="form-label">Date:</label>
+                <InputDate id="date" @bind-Value="logEntry.Date" class="form-control" />
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label for="time" class="form-label">Time:</label>
+                <InputTime id="time" @bind-Value="logEntry.Time" class="form-control" />
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label for="weather" class="form-label">Weather:</label>
+        <InputText id="weather" @bind-Value="logEntry.Weather" class="form-control" />
+    </div>
+
+    <div class="mb-3">
+        <label for="wind" class="form-label">Wind:</label>
+        <InputText id="wind" @bind-Value="logEntry.Wind" class="form-control" />
+    </div>
+
+    <div class="mb-3">
+        <label for="position" class="form-label">Position:</label>
+        <InputText id="position" @bind-Value="logEntry.Position" class="form-control" />
+    </div>
+
+    <div class="mb-3">
+        <label for="skipper" class="form-label">Skipper:</label>
+        <InputText id="skipper" @bind-Value="logEntry.Skipper" class="form-control" />
+    </div>
+
+    <div class="mb-3">
+        <label for="crew" class="form-label">Crew:</label>
+        <InputTextArea id="crew" @bind-Value="logEntry.Crew" class="form-control" rows="2" />
+    </div>
+
+    <div class="mb-3">
+        <label for="notes" class="form-label">Notes:</label>
+        <InputTextArea id="notes" @bind-Value="logEntry.Notes" class="form-control" rows="3" />
+        <button type="button" class="btn @(isRecording ? "btn-danger is-recording" : "btn-secondary") record-note-button mt-2" @onclick="ToggleVoiceRecording">
+            <span class="oi @(isRecording ? "oi-media-stop" : "oi-microphone")" aria-hidden="true"></span> @(isRecording ? "Stop Recording..." : "Record Voice Note")
+        </button>
+    </div>
+
+    <hr />
+    <button type="submit" class="btn btn-primary me-2">Save Log Entry</button>
+    @if (!string.IsNullOrEmpty(confirmationMessage))
+    {
+        <span class="alert @(isError ? "alert-danger" : "alert-success") py-1 px-2" role="alert">
+            @confirmationMessage
+        </span>
+    }
+</EditForm>
+
+
+@code {
+    private LogEntry logEntry = new LogEntry { Date = DateTime.Today, Time = DateTime.Now };
+    private string confirmationMessage = string.Empty;
+    private bool isError = false;
+    private const string localStorageKey = "logEntries";
+
+    private bool isRecording = false;
+    private DotNetObjectReference<AddLogEntry>? dotNetHelper;
+
+    private async Task ToggleVoiceRecording()
+    {
+        dotNetHelper = DotNetObjectReference.Create(this);
+        if (isRecording)
+        {
+            await JSRuntime.InvokeVoidAsync("stopSpeechRecognition");
+        }
+        else
+        {
+            confirmationMessage = "";
+            isError = false;
+            await JSRuntime.InvokeVoidAsync("startSpeechRecognition", dotNetHelper);
+        }
+    }
+
+    [JSInvokable]
+    public void UpdateNotesField(string recognizedText)
+    {
+        logEntry.Notes = string.IsNullOrEmpty(logEntry.Notes) ? recognizedText : $"{logEntry.Notes} {recognizedText}";
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void UpdateRecordingState(bool recording)
+    {
+        isRecording = recording;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void NotifySpeechRecognitionError(string message)
+    {
+        confirmationMessage = message;
+        isError = true;
+        isRecording = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        try
+        {
+            string existingEntriesJson = await JSRuntime.InvokeAsync<string>("getFromLocalStorage", localStorageKey);
+            List<LogEntry> logEntries = new List<LogEntry>();
+
+            if (!string.IsNullOrEmpty(existingEntriesJson))
+            {
+                logEntries = JsonSerializer.Deserialize<List<LogEntry>>(existingEntriesJson) ?? new List<LogEntry>();
+            }
+
+            logEntries.Add(logEntry);
+            string updatedEntriesJson = JsonSerializer.Serialize(logEntries);
+            await JSRuntime.InvokeVoidAsync("saveToLocalStorage", localStorageKey, updatedEntriesJson);
+
+            confirmationMessage = "Log entry saved successfully!";
+            isError = false;
+            logEntry = new LogEntry { Date = DateTime.Today, Time = DateTime.Now };
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving to local storage: {ex.Message}");
+            confirmationMessage = "Error saving log entry. See console for details.";
+            isError = true;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        dotNetHelper?.Dispose();
+        if (isRecording)
+        {
+            try {
+                 JSRuntime.InvokeVoidAsync("stopSpeechRecognition");
+            } catch (JSDisconnectedException) {
+                // If JS runtime is not available (e.g. during pre-rendering or user navigated away quickly)
+                // this call can fail. It's safe to ignore this as browser will stop mic eventually.
+            }
+        }
+    }
+}
